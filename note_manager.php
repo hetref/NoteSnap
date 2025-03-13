@@ -5,25 +5,23 @@
  */
 
 require_once 'encrypt.php';
+require_once 'database.php';
 
 /**
- * Initialize a user's note file if it doesn't exist
+ * Initialize database tables for user notes if they don't exist
  * 
- * @param string $uuid User's UUID
  * @return bool True if successful
  */
 function initUserNotes($uuid)
 {
-    $filename = "notes_{$uuid}.csv";
-
-    if (!file_exists($filename)) {
-        $headers = ['id', 'title', 'content', 'tags', 'created_at', 'updated_at'];
-        $file = fopen($filename, 'w');
-        fputcsv($file, $headers);
-        fclose($file);
+    try {
+        $db = Database::getInstance();
+        $db->ensureTablesExist();
+        return true;
+    } catch (Exception $e) {
+        error_log("Failed to initialize user notes: " . $e->getMessage());
+        return false;
     }
-
-    return true;
 }
 
 /**
@@ -37,36 +35,26 @@ function initUserNotes($uuid)
  */
 function createNote($uuid, $title, $content, $tags = '')
 {
-    initUserNotes($uuid);
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $filename = "notes_{$uuid}.csv";
-    $file = fopen($filename, 'r');
+        // Encrypt note content
+        $encryptedContent = encryptData($content);
 
-    // Get all existing notes to determine the next ID
-    $notes = [];
-    fgetcsv($file); // Skip header
+        $sql = "INSERT INTO " . TABLE_NOTES . " (user_uuid, title, content, tags) VALUES (:uuid, :title, :content, :tags)";
+        $stmt = $conn->prepare($sql);
 
-    while (($note = fgetcsv($file)) !== false) {
-        $notes[] = $note;
+        return $stmt->execute([
+            ':uuid' => $uuid,
+            ':title' => $title,
+            ':content' => $encryptedContent,
+            ':tags' => $tags
+        ]);
+    } catch (Exception $e) {
+        error_log("Failed to create note: " . $e->getMessage());
+        return false;
     }
-
-    fclose($file);
-
-    // Generate new note ID (simple increment)
-    $id = count($notes) + 1;
-
-    // Get current timestamp
-    $now = date('Y-m-d H:i:s');
-
-    // Encrypt note content
-    $encryptedContent = encryptData($content);
-
-    // Append the new note
-    $file = fopen($filename, 'a');
-    fputcsv($file, [$id, $title, $encryptedContent, $tags, $now, $now]);
-    fclose($file);
-
-    return true;
 }
 
 /**
@@ -78,38 +66,40 @@ function createNote($uuid, $title, $content, $tags = '')
  */
 function getNotes($uuid, $tag = '')
 {
-    initUserNotes($uuid);
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $filename = "notes_{$uuid}.csv";
-    $file = fopen($filename, 'r');
+        $sql = "SELECT * FROM " . TABLE_NOTES . " WHERE user_uuid = :uuid";
+        $params = [':uuid' => $uuid];
 
-    $notes = [];
-    fgetcsv($file); // Skip header
-
-    while (($note = fgetcsv($file)) !== false) {
-        // Decrypt note content
-        $note[2] = decryptData($note[2]);
-
-        // Filter by tag if specified
         if (!empty($tag)) {
-            $noteTags = explode(',', $note[3]);
-            if (!in_array($tag, $noteTags)) {
-                continue;
-            }
+            $sql .= " AND FIND_IN_SET(:tag, tags) > 0";
+            $params[':tag'] = $tag;
         }
 
-        $notes[] = [
-            'id' => $note[0],
-            'title' => $note[1],
-            'content' => $note[2],
-            'tags' => $note[3],
-            'created_at' => $note[4],
-            'updated_at' => $note[5]
-        ];
-    }
+        $sql .= " ORDER BY created_at DESC";
 
-    fclose($file);
-    return $notes;
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+
+        $notes = [];
+        while ($note = $stmt->fetch()) {
+            $notes[] = [
+                'id' => $note['id'],
+                'title' => $note['title'],
+                'content' => decryptData($note['content']),
+                'tags' => $note['tags'],
+                'created_at' => $note['created_at'],
+                'updated_at' => $note['updated_at']
+            ];
+        }
+
+        return $notes;
+    } catch (Exception $e) {
+        error_log("Failed to get notes: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**
@@ -121,15 +111,30 @@ function getNotes($uuid, $tag = '')
  */
 function getNoteById($uuid, $id)
 {
-    $notes = getNotes($uuid);
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    foreach ($notes as $note) {
-        if ($note['id'] == $id) {
-            return $note;
+        $sql = "SELECT * FROM " . TABLE_NOTES . " WHERE user_uuid = :uuid AND id = :id";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([':uuid' => $uuid, ':id' => $id]);
+
+        if ($note = $stmt->fetch()) {
+            return [
+                'id' => $note['id'],
+                'title' => $note['title'],
+                'content' => decryptData($note['content']),
+                'tags' => $note['tags'],
+                'created_at' => $note['created_at'],
+                'updated_at' => $note['updated_at']
+            ];
         }
-    }
 
-    return false;
+        return false;
+    } catch (Exception $e) {
+        error_log("Failed to get note by ID: " . $e->getMessage());
+        return false;
+    }
 }
 
 /**
@@ -144,53 +149,39 @@ function getNoteById($uuid, $id)
  */
 function editNote($uuid, $id, $title = null, $content = null, $tags = null)
 {
-    initUserNotes($uuid);
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $filename = "notes_{$uuid}.csv";
-    $tempFile = "notes_{$uuid}_temp.csv";
+        $updates = [];
+        $params = [':uuid' => $uuid, ':id' => $id];
 
-    $original = fopen($filename, 'r');
-    $temp = fopen($tempFile, 'w');
-
-    // Copy header
-    fputcsv($temp, fgetcsv($original));
-
-    $updated = false;
-
-    while (($note = fgetcsv($original)) !== false) {
-        if ($note[0] == $id) {
-            // Only update fields that were provided
-            if ($title !== null) {
-                $note[1] = $title;
-            }
-
-            if ($content !== null) {
-                $note[2] = encryptData($content);
-            }
-
-            if ($tags !== null) {
-                $note[3] = $tags;
-            }
-
-            // Update the 'updated_at' timestamp
-            $note[5] = date('Y-m-d H:i:s');
-
-            $updated = true;
+        if ($title !== null) {
+            $updates[] = "title = :title";
+            $params[':title'] = $title;
         }
 
-        fputcsv($temp, $note);
-    }
+        if ($content !== null) {
+            $updates[] = "content = :content";
+            $params[':content'] = encryptData($content);
+        }
 
-    fclose($original);
-    fclose($temp);
+        if ($tags !== null) {
+            $updates[] = "tags = :tags";
+            $params[':tags'] = $tags;
+        }
 
-    // Replace original file with updated file
-    if ($updated) {
-        unlink($filename);
-        rename($tempFile, $filename);
-        return true;
-    } else {
-        unlink($tempFile);
+        if (empty($updates)) {
+            return true;
+        }
+
+        $sql = "UPDATE " . TABLE_NOTES . " SET " . implode(", ", $updates) .
+            " WHERE user_uuid = :uuid AND id = :id";
+
+        $stmt = $conn->prepare($sql);
+        return $stmt->execute($params);
+    } catch (Exception $e) {
+        error_log("Failed to edit note: " . $e->getMessage());
         return false;
     }
 }
@@ -204,74 +195,58 @@ function editNote($uuid, $id, $title = null, $content = null, $tags = null)
  */
 function deleteNote($uuid, $id)
 {
-    initUserNotes($uuid);
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $filename = "notes_{$uuid}.csv";
-    $tempFile = "notes_{$uuid}_temp.csv";
-
-    $original = fopen($filename, 'r');
-    $temp = fopen($tempFile, 'w');
-
-    // Copy header
-    fputcsv($temp, fgetcsv($original));
-
-    $deleted = false;
-    $notes = [];
-
-    // Collect all notes except the one to be deleted
-    while (($note = fgetcsv($original)) !== false) {
-        if ($note[0] != $id) {
-            $notes[] = $note;
-        } else {
-            $deleted = true;
-        }
-    }
-
-    fclose($original);
-
-    // If the note was deleted, rewrite all notes with new sequential IDs
-    if ($deleted) {
-        // Reorder note IDs
-        for ($i = 0; $i < count($notes); $i++) {
-            $notes[$i][0] = $i + 1; // Reassign IDs starting from 1
-            fputcsv($temp, $notes[$i]);
-        }
-
-        fclose($temp);
-        unlink($filename);
-        rename($tempFile, $filename);
-        return true;
-    } else {
-        fclose($temp);
-        unlink($tempFile);
+        $sql = "DELETE FROM " . TABLE_NOTES . " WHERE user_uuid = :uuid AND id = :id";
+        $stmt = $conn->prepare($sql);
+        return $stmt->execute([':uuid' => $uuid, ':id' => $id]);
+    } catch (Exception $e) {
+        error_log("Failed to delete note: " . $e->getMessage());
         return false;
     }
 }
 
 /**
- * Search notes by title or content
+ * Search notes by content or title
  * 
  * @param string $uuid User's UUID
  * @param string $query Search query
- * @return array Matching notes
+ * @return array Array of matching notes
  */
 function searchNotes($uuid, $query)
 {
-    $allNotes = getNotes($uuid);
-    $results = [];
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $query = strtolower($query);
+        $sql = "SELECT * FROM " . TABLE_NOTES .
+            " WHERE user_uuid = :uuid AND (title LIKE :query OR content LIKE :query)";
 
-    foreach ($allNotes as $note) {
-        if (
-            strpos(strtolower($note['title']), $query) !== false ||
-            strpos(strtolower($note['content']), $query) !== false
-        ) {
-            $results[] = $note;
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            ':uuid' => $uuid,
+            ':query' => '%' . $query . '%'
+        ]);
+
+        $notes = [];
+        while ($note = $stmt->fetch()) {
+            $notes[] = [
+                'id' => $note['id'],
+                'title' => $note['title'],
+                'content' => decryptData($note['content']),
+                'tags' => $note['tags'],
+                'created_at' => $note['created_at'],
+                'updated_at' => $note['updated_at']
+            ];
         }
-    }
 
-    return $results;
+        return $notes;
+    } catch (Exception $e) {
+        error_log("Failed to search notes: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**

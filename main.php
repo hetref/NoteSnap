@@ -55,8 +55,9 @@ function displayMainMenu()
         echo "6. Filter Notes by Tag\n";
         echo "7. Export Notes\n";
         echo "8. Update Security Question\n";
-        echo "9. Logout\n";
-        echo "10. Exit\n";
+        echo "9. Delete Account\n";
+        echo "10. Logout\n";
+        echo "11. Exit\n";
     } else {
         echo "1. Login\n";
         echo "2. Register\n";
@@ -665,6 +666,39 @@ function handleExportNotes()
 }
 
 /**
+ * Handle user account deletion
+ */
+function handleDeleteAccount()
+{
+    global $loggedIn, $currentUser;
+
+    displayHeader();
+    echo "DELETE ACCOUNT\n";
+    echo "=============================================================\n";
+
+    echo "WARNING: This action will permanently delete your account and all your notes!\n";
+    echo "Are you sure you want to delete your account? (type 'DELETE' to confirm): ";
+    $confirmation = trim(fgets(STDIN));
+
+    if ($confirmation === 'DELETE') {
+        $result = deleteUser($currentUser['username']);
+
+        if ($result) {
+            echo "Your account has been successfully deleted.\n";
+            $loggedIn = false;
+            $currentUser = null;
+        } else {
+            echo "Failed to delete account. Please try again later.\n";
+        }
+    } else {
+        echo "Account deletion cancelled.\n";
+    }
+
+    echo "Press Enter to continue...";
+    fgets(STDIN);
+}
+
+/**
  * Main application loop
  */
 function runApplication()
@@ -705,10 +739,13 @@ function runApplication()
                     handleUpdateSecurityQuestion();
                     break;
                 case '9':
+                    handleDeleteAccount();
+                    break;
+                case '10':
                     $loggedIn = false;
                     $currentUser = null;
                     break;
-                case '10':
+                case '11':
                     $running = false;
                     break;
                 default:

@@ -5,22 +5,23 @@
  */
 
 require_once 'encrypt.php';
+require_once 'database.php';
 
 /**
- * Check if the user database exists, and create it if it doesn't
+ * Initialize the user database
  * 
  * @return bool True if database exists or was created successfully
  */
 function initUserDatabase()
 {
-    if (!file_exists('database.csv')) {
-        $headers = ['uuid', 'username', 'hashed_password', 'security_question', 'security_answer'];
-        $file = fopen('database.csv', 'w');
-        fputcsv($file, $headers);
-        fclose($file);
+    try {
+        $db = Database::getInstance();
+        $db->ensureTablesExist();
         return true;
+    } catch (Exception $e) {
+        error_log("Failed to initialize user database: " . $e->getMessage());
+        return false;
     }
-    return true;
 }
 
 /**
@@ -45,30 +46,20 @@ function generateUUID()
  */
 function usernameExists($username)
 {
-    // If the database doesn't exist, initialize it
-    if (!file_exists('database.csv')) {
-        initUserDatabase();
-        return false; // No users exist yet
-    }
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $file = fopen('database.csv', 'r');
-    if ($file === false) {
-        // If we can't open the file, create it and return false
-        initUserDatabase();
+        $sql = "SELECT COUNT(*) as count FROM " . TABLE_USERS . " WHERE username = :username";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([':username' => $username]);
+
+        $result = $stmt->fetch();
+        return $result['count'] > 0;
+    } catch (Exception $e) {
+        error_log("Failed to check username: " . $e->getMessage());
         return false;
     }
-
-    fgetcsv($file); // Skip header
-
-    while (($user = fgetcsv($file)) !== false) {
-        if ($user[1] == $username) {
-            fclose($file);
-            return true;
-        }
-    }
-
-    fclose($file);
-    return false;
 }
 
 /**
@@ -82,40 +73,47 @@ function usernameExists($username)
  */
 function registerUser($username, $password, $securityQuestion, $securityAnswer)
 {
-    initUserDatabase();
+    try {
+        initUserDatabase();
 
-    // Check if the username is already taken
-    if (usernameExists($username)) {
+        // Check if the username is already taken
+        if (usernameExists($username)) {
+            return false;
+        }
+
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
+
+        // Generate UUID and hash the password
+        $uuid = generateUUID();
+        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+        // Encrypt security answer
+        $encryptedAnswer = encryptData(strtolower($securityAnswer));
+
+        $sql = "INSERT INTO " . TABLE_USERS . " (uuid, username, hashed_password, security_question, security_answer) 
+                VALUES (:uuid, :username, :password, :question, :answer)";
+
+        $stmt = $conn->prepare($sql);
+        $success = $stmt->execute([
+            ':uuid' => $uuid,
+            ':username' => $username,
+            ':password' => $hashedPassword,
+            ':question' => $securityQuestion,
+            ':answer' => $encryptedAnswer
+        ]);
+
+        if ($success) {
+            return [
+                'uuid' => $uuid,
+                'username' => $username,
+                'security_question' => $securityQuestion
+            ];
+        }
+        return false;
+    } catch (Exception $e) {
+        error_log("Failed to register user: " . $e->getMessage());
         return false;
     }
-
-    // Generate UUID and hash the password
-    $uuid = generateUUID();
-    $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-    // Encrypt security answer
-    $securityAnswer = encryptData(strtolower($securityAnswer));
-
-    // Create new user record
-    $userData = [
-        'uuid' => $uuid,
-        'username' => $username,
-        'hashed_password' => $hashedPassword,
-        'security_question' => $securityQuestion,
-        'security_answer' => $securityAnswer
-    ];
-
-    // Append the user to the database
-    $file = fopen('database.csv', 'a');
-    fputcsv($file, [
-        $userData['uuid'],
-        $userData['username'],
-        $userData['hashed_password'],
-        $userData['security_question'],
-        $userData['security_answer']
-    ]);
-    fclose($file);
-
-    return $userData;
 }
 
 /**
@@ -127,33 +125,28 @@ function registerUser($username, $password, $securityQuestion, $securityAnswer)
  */
 function loginUser($username, $password)
 {
-    if (!file_exists('database.csv')) {
-        initUserDatabase();
-        return false;
-    }
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $file = fopen('database.csv', 'r');
-    if ($file === false) {
-        // If we can't open the file, create it and return false
-        initUserDatabase();
-        return false;
-    }
+        $sql = "SELECT * FROM " . TABLE_USERS . " WHERE username = :username";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([':username' => $username]);
 
-    fgetcsv($file); // Skip header
-
-    while (($user = fgetcsv($file)) !== false) {
-        if ($user[1] == $username && password_verify($password, $user[2])) {
-            fclose($file);
-            return [
-                'uuid' => $user[0],
-                'username' => $user[1],
-                'security_question' => $user[3]
-            ];
+        if ($user = $stmt->fetch()) {
+            if (password_verify($password, $user['hashed_password'])) {
+                return [
+                    'uuid' => $user['uuid'],
+                    'username' => $user['username'],
+                    'security_question' => $user['security_question']
+                ];
+            }
         }
+        return false;
+    } catch (Exception $e) {
+        error_log("Failed to login user: " . $e->getMessage());
+        return false;
     }
-
-    fclose($file);
-    return false;
 }
 
 /**
@@ -164,34 +157,27 @@ function loginUser($username, $password)
  */
 function getUserByUsername($username)
 {
-    if (!file_exists('database.csv')) {
-        initUserDatabase();
-        return false;
-    }
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $file = fopen('database.csv', 'r');
-    if ($file === false) {
-        // If we can't open the file, create it and return false
-        initUserDatabase();
-        return false;
-    }
+        $sql = "SELECT * FROM " . TABLE_USERS . " WHERE username = :username";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([':username' => $username]);
 
-    fgetcsv($file); // Skip header
-
-    while (($user = fgetcsv($file)) !== false) {
-        if ($user[1] == $username) {
-            fclose($file);
+        if ($user = $stmt->fetch()) {
             return [
-                'uuid' => $user[0],
-                'username' => $user[1],
-                'security_question' => $user[3],
-                'security_answer' => $user[4]
+                'uuid' => $user['uuid'],
+                'username' => $user['username'],
+                'security_question' => $user['security_question'],
+                'security_answer' => $user['security_answer']
             ];
         }
+        return false;
+    } catch (Exception $e) {
+        error_log("Failed to get user: " . $e->getMessage());
+        return false;
     }
-
-    fclose($file);
-    return false;
 }
 
 /**
@@ -204,62 +190,34 @@ function getUserByUsername($username)
  */
 function resetPassword($username, $securityAnswer, $newPassword)
 {
-    $userData = getUserByUsername($username);
-
-    if (!$userData) {
-        return false;
-    }
-
-    // Verify security answer
-    $storedAnswer = $userData['security_answer'];
-    $providedAnswer = strtolower($securityAnswer);
-
-    if (decryptData($storedAnswer) !== $providedAnswer) {
-        return false;
-    }
-
-    // Update password
-    $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
-    $updated = false;
-
-    if (!file_exists('database.csv')) {
-        return false;
-    }
-
-    $tempFile = 'database_temp.csv';
-    $original = fopen('database.csv', 'r');
-    if ($original === false) {
-        return false;
-    }
-
-    $temp = fopen($tempFile, 'w');
-    if ($temp === false) {
-        fclose($original);
-        return false;
-    }
-
-    // Copy header
-    fputcsv($temp, fgetcsv($original));
-
-    // Update user's password
-    while (($user = fgetcsv($original)) !== false) {
-        if ($user[1] == $username) {
-            $user[2] = $hashedPassword;
-            $updated = true;
+    try {
+        $userData = getUserByUsername($username);
+        if (!$userData) {
+            return false;
         }
-        fputcsv($temp, $user);
-    }
 
-    fclose($original);
-    fclose($temp);
+        // Verify security answer
+        $storedAnswer = $userData['security_answer'];
+        $providedAnswer = strtolower($securityAnswer);
 
-    // Replace original file with updated file
-    if ($updated) {
-        unlink('database.csv');
-        rename($tempFile, 'database.csv');
-        return true;
-    } else {
-        unlink($tempFile);
+        if (decryptData($storedAnswer) !== $providedAnswer) {
+            return false;
+        }
+
+        // Update password
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
+
+        $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+
+        $sql = "UPDATE " . TABLE_USERS . " SET hashed_password = :password WHERE username = :username";
+        $stmt = $conn->prepare($sql);
+        return $stmt->execute([
+            ':password' => $hashedPassword,
+            ':username' => $username
+        ]);
+    } catch (Exception $e) {
+        error_log("Failed to reset password: " . $e->getMessage());
         return false;
     }
 }
@@ -274,50 +232,46 @@ function resetPassword($username, $securityAnswer, $newPassword)
  */
 function updateSecurityQuestion($username, $newSecurityQuestion, $newSecurityAnswer)
 {
-    if (!file_exists('database.csv')) {
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
+
+        // Encrypt the new security answer
+        $encryptedAnswer = encryptData(strtolower($newSecurityAnswer));
+
+        $sql = "UPDATE " . TABLE_USERS . " 
+                SET security_question = :question, security_answer = :answer 
+                WHERE username = :username";
+
+        $stmt = $conn->prepare($sql);
+        return $stmt->execute([
+            ':question' => $newSecurityQuestion,
+            ':answer' => $encryptedAnswer,
+            ':username' => $username
+        ]);
+    } catch (Exception $e) {
+        error_log("Failed to update security question: " . $e->getMessage());
         return false;
     }
+}
 
-    $tempFile = 'database_temp.csv';
-    $original = fopen('database.csv', 'r');
-    if ($original === false) {
-        return false;
-    }
+/**
+ * Delete a user account and all associated data
+ * 
+ * @param string $username Username of the account to delete
+ * @return bool True if successful
+ */
+function deleteUser($username)
+{
+    try {
+        $db = Database::getInstance();
+        $conn = $db->getConnection();
 
-    $temp = fopen($tempFile, 'w');
-    if ($temp === false) {
-        fclose($original);
-        return false;
-    }
-
-    // Encrypt the new security answer
-    $encryptedAnswer = encryptData(strtolower($newSecurityAnswer));
-
-    // Copy header
-    fputcsv($temp, fgetcsv($original));
-
-    $updated = false;
-
-    // Update user's security question and answer
-    while (($user = fgetcsv($original)) !== false) {
-        if ($user[1] == $username) {
-            $user[3] = $newSecurityQuestion;
-            $user[4] = $encryptedAnswer;
-            $updated = true;
-        }
-        fputcsv($temp, $user);
-    }
-
-    fclose($original);
-    fclose($temp);
-
-    // Replace original file with updated file
-    if ($updated) {
-        unlink('database.csv');
-        rename($tempFile, 'database.csv');
-        return true;
-    } else {
-        unlink($tempFile);
+        $sql = "DELETE FROM " . TABLE_USERS . " WHERE username = :username";
+        $stmt = $conn->prepare($sql);
+        return $stmt->execute([':username' => $username]);
+    } catch (Exception $e) {
+        error_log("Failed to delete user: " . $e->getMessage());
         return false;
     }
 }

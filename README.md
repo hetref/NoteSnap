@@ -11,6 +11,7 @@ A terminal-based PHP application for managing encrypted notes with user authenti
   - Password recovery via security questions
   - Update security question and answer while logged in
   - Each user has a unique UUID
+  - Delete account and all associated data
 
 - **Note Management**
 
@@ -30,8 +31,25 @@ A terminal-based PHP application for managing encrypted notes with user authenti
 ## Technical Implementation
 
 - **Storage Structure**
+
   - `database.csv`: Stores user credentials and security information
   - `notes_{UUID}.csv`: Each user has their own notes file
+
+- **Database Design**
+
+  - Uses MySQL with foreign key constraints for data integrity
+  - User table (`users`) is the parent table with UUID as primary key
+  - Notes table (`notes`) references user table with `ON DELETE CASCADE`
+  - Ensures automatic deletion of all user data when account is deleted
+
+- **Data Deletion**
+
+  - Account deletion is handled at database level
+  - Foreign key constraints ensure referential integrity
+  - Cascading deletes remove all associated notes automatically
+  - Atomic operation: entire transaction succeeds or fails together
+  - No orphaned data remains after account deletion
+
 - **File Structure**
   - `main.php`: The main application entry point
   - `auth.php`: User authentication functions
@@ -140,6 +158,23 @@ php main.php
 2. Select "Update Security Question" from the main menu
 3. Enter your new security question and answer
 4. Confirm the security answer
+
+### Delete Account
+
+1. Login to your account
+2. Select "Delete Account" from the main menu
+3. Read the warning message carefully - this action is irreversible
+4. Type 'DELETE' (in uppercase) to confirm account deletion
+   - Any other input will cancel the operation
+5. Upon confirmation:
+   - Your user account will be permanently deleted
+   - All your notes will be automatically deleted
+   - All your security information will be removed
+   - You will be automatically logged out
+6. The deletion is atomic - either everything is deleted or nothing is
+7. After deletion, you will need to create a new account to use the application again
+
+Note: The account deletion process uses database-level cascading deletes to ensure that all associated data (notes, security information, etc.) is completely removed from the system. This is handled automatically by the MySQL foreign key constraints with `ON DELETE CASCADE`.
 
 ### Note Management
 
