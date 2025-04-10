@@ -1,17 +1,8 @@
 <?php
 
-/**
- * Note management module for NoteSnap
- */
-
 require_once 'encrypt.php';
 require_once 'database.php';
 
-/**
- * Initialize database tables for user notes if they don't exist
- * 
- * @return bool True if successful
- */
 function initUserNotes($uuid)
 {
     try {
@@ -24,22 +15,12 @@ function initUserNotes($uuid)
     }
 }
 
-/**
- * Create a new note for a user
- * 
- * @param string $uuid User's UUID
- * @param string $title Note title
- * @param string $content Note content
- * @param string $tags Comma-separated tags
- * @return bool True if successful
- */
 function createNote($uuid, $title, $content, $tags = '')
 {
     try {
         $db = Database::getInstance();
         $conn = $db->getConnection();
 
-        // Encrypt note content
         $encryptedContent = encryptData($content);
 
         $sql = "INSERT INTO " . TABLE_NOTES . " (user_uuid, title, content, tags) VALUES (:uuid, :title, :content, :tags)";
@@ -57,13 +38,6 @@ function createNote($uuid, $title, $content, $tags = '')
     }
 }
 
-/**
- * Get all notes for a user
- * 
- * @param string $uuid User's UUID
- * @param string $tag Optional tag to filter by
- * @return array Array of notes
- */
 function getNotes($uuid, $tag = '')
 {
     try {
@@ -102,13 +76,6 @@ function getNotes($uuid, $tag = '')
     }
 }
 
-/**
- * Get a specific note by ID
- * 
- * @param string $uuid User's UUID
- * @param int $id Note ID
- * @return array|bool Note data if found, false otherwise
- */
 function getNoteById($uuid, $id)
 {
     try {
@@ -137,16 +104,6 @@ function getNoteById($uuid, $id)
     }
 }
 
-/**
- * Edit an existing note
- * 
- * @param string $uuid User's UUID
- * @param int $id Note ID
- * @param string $title New title (optional)
- * @param string $content New content (optional)
- * @param string $tags New tags (optional)
- * @return bool True if successful
- */
 function editNote($uuid, $id, $title = null, $content = null, $tags = null)
 {
     try {
@@ -186,13 +143,6 @@ function editNote($uuid, $id, $title = null, $content = null, $tags = null)
     }
 }
 
-/**
- * Delete a note
- * 
- * @param string $uuid User's UUID
- * @param int $id Note ID
- * @return bool True if successful
- */
 function deleteNote($uuid, $id)
 {
     try {
@@ -208,13 +158,6 @@ function deleteNote($uuid, $id)
     }
 }
 
-/**
- * Search notes by content or title
- * 
- * @param string $uuid User's UUID
- * @param string $query Search query
- * @return array Array of matching notes
- */
 function searchNotes($uuid, $query)
 {
     try {
@@ -222,12 +165,13 @@ function searchNotes($uuid, $query)
         $conn = $db->getConnection();
 
         $sql = "SELECT * FROM " . TABLE_NOTES .
-            " WHERE user_uuid = :uuid AND (title LIKE :query OR content LIKE :query)";
+            " WHERE user_uuid = :uuid AND (title LIKE :query1 OR content LIKE :query2)";
 
         $stmt = $conn->prepare($sql);
         $stmt->execute([
             ':uuid' => $uuid,
-            ':query' => '%' . $query . '%'
+            ':query1' => '%' . $query . '%',
+            ':query2' => '%' . $query . '%'
         ]);
 
         $notes = [];
@@ -249,43 +193,31 @@ function searchNotes($uuid, $query)
     }
 }
 
-/**
- * Export user notes to a CSV file with decrypted content
- * 
- * @param string $uuid User's UUID
- * @param string $exportFilename Filename for the exported CSV
- * @return bool True if successful
- */
 function exportNotes($uuid, $exportFilename = null)
 {
-    // Get all user notes with decrypted content
     $notes = getNotes($uuid);
 
     if (empty($notes)) {
         return false;
     }
 
-    // Generate export filename if not provided
     if ($exportFilename === null) {
         $timestamp = date('Y-m-d_H-i-s');
         $exportFilename = "notes_export_{$timestamp}.csv";
     }
 
-    // Create export file
     $exportFile = fopen($exportFilename, 'w');
     if ($exportFile === false) {
         return false;
     }
 
-    // Write header
     fputcsv($exportFile, ['id', 'title', 'content', 'tags', 'created_at', 'updated_at']);
 
-    // Write notes with decrypted content
     foreach ($notes as $note) {
         fputcsv($exportFile, [
             $note['id'],
             $note['title'],
-            $note['content'], // Content is already decrypted by getNotes
+            $note['content'],
             $note['tags'],
             $note['created_at'],
             $note['updated_at']

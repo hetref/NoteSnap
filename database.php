@@ -45,7 +45,6 @@ class Database
     private function initializeTables()
     {
         try {
-            // Create users table first since notes table references it
             $sql = "CREATE TABLE IF NOT EXISTS " . TABLE_USERS . " (
                 uuid VARCHAR(36) PRIMARY KEY,
                 username VARCHAR(255) NOT NULL UNIQUE,
@@ -59,7 +58,6 @@ class Database
 
             $this->connection->exec($sql);
 
-            // Create notes table with foreign key reference to users
             $sql = "CREATE TABLE IF NOT EXISTS " . TABLE_NOTES . " (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_uuid VARCHAR(36) NOT NULL,
@@ -79,7 +77,6 @@ class Database
         }
     }
 
-    // Public method to manually trigger table initialization if needed
     public function ensureTablesExist()
     {
         return $this->initializeTables();

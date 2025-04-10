@@ -1,17 +1,8 @@
 <?php
 
-/**
- * Authentication module for NoteSnap
- */
-
 require_once 'encrypt.php';
 require_once 'database.php';
 
-/**
- * Initialize the user database
- * 
- * @return bool True if database exists or was created successfully
- */
 function initUserDatabase()
 {
     try {
@@ -24,11 +15,6 @@ function initUserDatabase()
     }
 }
 
-/**
- * Generate a unique UUID v4
- * 
- * @return string UUID
- */
 function generateUUID()
 {
     $data = random_bytes(16);
@@ -38,12 +24,6 @@ function generateUUID()
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 }
 
-/**
- * Check if a username already exists
- * 
- * @param string $username Username to check
- * @return bool True if username exists
- */
 function usernameExists($username)
 {
     try {
@@ -62,21 +42,11 @@ function usernameExists($username)
     }
 }
 
-/**
- * Register a new user
- * 
- * @param string $username Username
- * @param string $password Password
- * @param string $securityQuestion Security question
- * @param string $securityAnswer Security answer
- * @return array|bool User data if successful, false otherwise
- */
 function registerUser($username, $password, $securityQuestion, $securityAnswer)
 {
     try {
         initUserDatabase();
 
-        // Check if the username is already taken
         if (usernameExists($username)) {
             return false;
         }
@@ -84,10 +54,8 @@ function registerUser($username, $password, $securityQuestion, $securityAnswer)
         $db = Database::getInstance();
         $conn = $db->getConnection();
 
-        // Generate UUID and hash the password
         $uuid = generateUUID();
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-        // Encrypt security answer
         $encryptedAnswer = encryptData(strtolower($securityAnswer));
 
         $sql = "INSERT INTO " . TABLE_USERS . " (uuid, username, hashed_password, security_question, security_answer) 
@@ -116,13 +84,6 @@ function registerUser($username, $password, $securityQuestion, $securityAnswer)
     }
 }
 
-/**
- * Authenticate a user
- * 
- * @param string $username Username
- * @param string $password Password
- * @return array|bool User data if credentials are valid, false otherwise
- */
 function loginUser($username, $password)
 {
     try {
@@ -149,12 +110,6 @@ function loginUser($username, $password)
     }
 }
 
-/**
- * Get user data by username
- * 
- * @param string $username Username
- * @return array|bool User data if found, false otherwise
- */
 function getUserByUsername($username)
 {
     try {
@@ -180,14 +135,6 @@ function getUserByUsername($username)
     }
 }
 
-/**
- * Reset password by verifying security answer
- * 
- * @param string $username Username
- * @param string $securityAnswer Answer to security question
- * @param string $newPassword New password
- * @return bool True if password was reset successfully
- */
 function resetPassword($username, $securityAnswer, $newPassword)
 {
     try {
@@ -196,7 +143,6 @@ function resetPassword($username, $securityAnswer, $newPassword)
             return false;
         }
 
-        // Verify security answer
         $storedAnswer = $userData['security_answer'];
         $providedAnswer = strtolower($securityAnswer);
 
@@ -204,7 +150,6 @@ function resetPassword($username, $securityAnswer, $newPassword)
             return false;
         }
 
-        // Update password
         $db = Database::getInstance();
         $conn = $db->getConnection();
 
@@ -222,21 +167,12 @@ function resetPassword($username, $securityAnswer, $newPassword)
     }
 }
 
-/**
- * Update security question and answer for a user
- * 
- * @param string $username Username
- * @param string $newSecurityQuestion New security question
- * @param string $newSecurityAnswer New security answer
- * @return bool True if update was successful
- */
 function updateSecurityQuestion($username, $newSecurityQuestion, $newSecurityAnswer)
 {
     try {
         $db = Database::getInstance();
         $conn = $db->getConnection();
 
-        // Encrypt the new security answer
         $encryptedAnswer = encryptData(strtolower($newSecurityAnswer));
 
         $sql = "UPDATE " . TABLE_USERS . " 
@@ -255,12 +191,6 @@ function updateSecurityQuestion($username, $newSecurityQuestion, $newSecurityAns
     }
 }
 
-/**
- * Delete a user account and all associated data
- * 
- * @param string $username Username of the account to delete
- * @return bool True if successful
- */
 function deleteUser($username)
 {
     try {

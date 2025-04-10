@@ -1,0 +1,5 @@
+id,title,content,tags,created_at,updated_at
+1,"Demo Note","This is the demo note
+with a multi-line content in it.
+This is a Secret Value.
+","secret-note,demo","2025-04-10 12:25:46","2025-04-10 12:25:46"

@@ -1,20 +1,11 @@
 <?php
 
-/**
- * NoteSnap - Multi-User Note Manager
- * A terminal-based PHP application for managing encrypted notes with user authentication.
- */
-
 require_once 'auth.php';
 require_once 'note_manager.php';
 
-// Global session variables
 $loggedIn = false;
 $currentUser = null;
 
-/**
- * Clear the terminal screen
- */
 function clearScreen()
 {
     if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -24,9 +15,6 @@ function clearScreen()
     }
 }
 
-/**
- * Display application header
- */
 function displayHeader()
 {
     clearScreen();
@@ -35,9 +23,6 @@ function displayHeader()
     echo "=============================================================\n";
 }
 
-/**
- * Display main menu
- */
 function displayMainMenu()
 {
     global $loggedIn, $currentUser;
@@ -69,20 +54,11 @@ function displayMainMenu()
     echo "Enter your choice: ";
 }
 
-/**
- * Sanitize user input
- * 
- * @param string $input User input to sanitize
- * @return string Sanitized input
- */
 function sanitizeInput($input)
 {
     return trim(htmlspecialchars($input, ENT_QUOTES, 'UTF-8'));
 }
 
-/**
- * Get user registration details
- */
 function handleRegistration()
 {
     displayHeader();
@@ -95,7 +71,6 @@ function handleRegistration()
     $securityQuestion = '';
     $securityAnswer = '';
 
-    // Get and validate username
     while (empty($username)) {
         echo "Enter username: ";
         $username = sanitizeInput(trim(fgets(STDIN)));
@@ -111,7 +86,6 @@ function handleRegistration()
         }
     }
 
-    // Get and validate password
     while (empty($password) || $password != $confirmPassword) {
         echo "Enter password (minimum 6 characters): ";
         $password = sanitizeInput(trim(fgets(STDIN)));
@@ -132,7 +106,6 @@ function handleRegistration()
         }
     }
 
-    // Get security question and answer
     while (empty($securityQuestion)) {
         echo "Enter security question: ";
         $securityQuestion = sanitizeInput(trim(fgets(STDIN)));
@@ -151,7 +124,6 @@ function handleRegistration()
         }
     }
 
-    // Register the user
     $result = registerUser($username, $password, $securityQuestion, $securityAnswer);
 
     if ($result) {
@@ -164,9 +136,6 @@ function handleRegistration()
     fgets(STDIN);
 }
 
-/**
- * Handle user login
- */
 function handleLogin()
 {
     global $loggedIn, $currentUser;
@@ -195,9 +164,6 @@ function handleLogin()
     fgets(STDIN);
 }
 
-/**
- * Handle password recovery
- */
 function handlePasswordRecovery()
 {
     displayHeader();
@@ -255,9 +221,6 @@ function handlePasswordRecovery()
     fgets(STDIN);
 }
 
-/**
- * Handle view all notes
- */
 function handleViewAllNotes()
 {
     global $currentUser;
@@ -301,9 +264,6 @@ function handleViewAllNotes()
     fgets(STDIN);
 }
 
-/**
- * Handle create new note
- */
 function handleCreateNote()
 {
     global $currentUser;
@@ -349,9 +309,6 @@ function handleCreateNote()
     fgets(STDIN);
 }
 
-/**
- * Handle edit note
- */
 function handleEditNote()
 {
     global $currentUser;
@@ -397,7 +354,6 @@ function handleEditNote()
                         break;
                     }
                     if ($line === '') {
-                        // Empty line means keep current content
                         $newContent = null;
                         break;
                     }
@@ -426,9 +382,6 @@ function handleEditNote()
     fgets(STDIN);
 }
 
-/**
- * Handle delete note
- */
 function handleDeleteNote()
 {
     global $currentUser;
@@ -473,9 +426,6 @@ function handleDeleteNote()
     fgets(STDIN);
 }
 
-/**
- * Handle search notes
- */
 function handleSearchNotes()
 {
     global $currentUser;
@@ -524,9 +474,6 @@ function handleSearchNotes()
     fgets(STDIN);
 }
 
-/**
- * Handle filter notes by tag
- */
 function handleFilterByTag()
 {
     global $currentUser;
@@ -575,9 +522,6 @@ function handleFilterByTag()
     fgets(STDIN);
 }
 
-/**
- * Handle updating security question
- */
 function handleUpdateSecurityQuestion()
 {
     global $currentUser;
@@ -590,7 +534,6 @@ function handleUpdateSecurityQuestion()
     $newSecurityAnswer = '';
     $confirmSecurityAnswer = '';
 
-    // Get new security question and answer
     while (empty($newSecurityQuestion)) {
         echo "Enter new security question: ";
         $newSecurityQuestion = sanitizeInput(trim(fgets(STDIN)));
@@ -631,9 +574,6 @@ function handleUpdateSecurityQuestion()
     fgets(STDIN);
 }
 
-/**
- * Handle exporting notes
- */
 function handleExportNotes()
 {
     global $currentUser;
@@ -642,7 +582,6 @@ function handleExportNotes()
     echo "EXPORT NOTES\n";
     echo "=============================================================\n";
 
-    // Default export filename
     $timestamp = date('Y-m-d_H-i-s');
     $defaultFilename = "notes_export_{$timestamp}.csv";
 
@@ -665,9 +604,6 @@ function handleExportNotes()
     fgets(STDIN);
 }
 
-/**
- * Handle user account deletion
- */
 function handleDeleteAccount()
 {
     global $loggedIn, $currentUser;
@@ -698,9 +634,6 @@ function handleDeleteAccount()
     fgets(STDIN);
 }
 
-/**
- * Main application loop
- */
 function runApplication()
 {
     global $loggedIn, $currentUser;
@@ -712,7 +645,6 @@ function runApplication()
         $choice = trim(fgets(STDIN));
 
         if ($loggedIn) {
-            // Logged in user menu
             switch ($choice) {
                 case '1':
                     handleViewAllNotes();
@@ -753,7 +685,6 @@ function runApplication()
                     fgets(STDIN);
             }
         } else {
-            // Not logged in menu
             switch ($choice) {
                 case '1':
                     handleLogin();
@@ -779,5 +710,4 @@ function runApplication()
     echo "=============================================================\n";
 }
 
-// Start the application
 runApplication();
